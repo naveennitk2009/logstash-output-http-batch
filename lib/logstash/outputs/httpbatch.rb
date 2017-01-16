@@ -5,7 +5,7 @@ require "logstash/json"
 require "uri"
 require "logstash/plugin_mixins/http_client"
 
-class LogStash::Outputs::Http < LogStash::Outputs::Base
+class LogStash::Outputs::HttpBatch < LogStash::Outputs::Base
   include LogStash::PluginMixins::HttpClient
 
   VALID_METHODS = ["put", "post", "patch", "delete", "get", "head"]
@@ -21,7 +21,7 @@ class LogStash::Outputs::Http < LogStash::Outputs::Base
   #
   # Beware, this gem does not yet support codecs. Please use the 'format' option for now.
 
-  config_name "http"
+  config_name "httpbatch"
 
   # URL to use
   config :url, :validate => :string, :required => :true
@@ -38,29 +38,11 @@ class LogStash::Outputs::Http < LogStash::Outputs::Base
   # If not specified, this defaults to the following:
   #
   # * if format is "json", "application/json"
-  # * if format is "form", "application/x-www-form-urlencoded"
   config :content_type, :validate => :string
 
-  # This lets you choose the structure and parts of the event that are sent.
-  #
-  #
-  # For example:
-  # [source,ruby]
-  #    mapping => {"foo" => "%{host}" 
-  #               "bar" => "%{type}"}
-  config :mapping, :validate => :hash
-
   # Set the format of the http body.
-  #
-  # If form, then the body will be the mapping (or whole event) converted
-  # into a query parameter string, e.g. `foo=bar&baz=fizz...`
-  #
-  # If message, then the body will be the result of formatting the event according to message
-  #
-  # Otherwise, the event is sent as json.
-  config :format, :validate => ["json", "form", "message"], :default => "json"
-
-  config :message, :validate => :string
+  # For now it just supports json
+  config :format, :validate => ["json"], :default => "json"
 
   def register
     @http_method = @http_method.to_sym
@@ -76,17 +58,15 @@ class LogStash::Outputs::Http < LogStash::Outputs::Base
 
     if @content_type.nil?
       case @format
-        when "form" ; @content_type = "application/x-www-form-urlencoded"
         when "json" ; @content_type = "application/json"
-        when "message" ; @content_type = "text/plain"
       end
     end
-
-    validate_format!
   end # def register
 
   def multi_receive(events)
-    events.each {|event| receive(event, :parallel)}
+    #Sending all the events receieved from input as a batch. Thus batch size is controlled by pipeline.batch.size or pipeline.batch.delay in logstash.yml. 
+    #This makes it a lot performant for logstash as the batching will be increased or decresed as per how fast logstash is able to send the requests for processing.
+    receive(events, :parallel) 
     client.execute!
   end
 
@@ -99,18 +79,18 @@ class LogStash::Outputs::Http < LogStash::Outputs::Base
   # In Logstash 2.2 and after things are much simpler, we just run each batch in parallel
   # This will make performance much easier to reason about, and more importantly let us guarantee
   # that if `multi_receive` returns all items have been sent.
-  def receive(event, async_type=:background)
-    body = event_body(event)
+  def receive(events, async_type=:background)
+    body = event_body(events)
 
     # Block waiting for a token
     token = @request_tokens.pop if async_type == :background
 
     # Send the request
-    url = event.sprintf(@url)
-    headers = event_headers(event)
+    url = @url
+    headers = event_headers()
 
     # Create an async request
-    request = client.send(async_type).send(@http_method, url, :body => body, :headers => headers)
+    request = client.send(async_type).send(@http_method, @url, :body => body, :headers => headers)
 
     request.on_complete do
       # Make sure we return the token to the pool
@@ -122,8 +102,7 @@ class LogStash::Outputs::Http < LogStash::Outputs::Base
         log_failure(
           "Encountered non-200 HTTP code #{response.code}",
           :response_code => response.code,
-          :url => url,
-          :event => event.to_hash)
+          :url => url)
       end
     end
 
@@ -163,66 +142,28 @@ class LogStash::Outputs::Http < LogStash::Outputs::Base
   end
 
   # Format the HTTP body
-  def event_body(event)
+  def event_body(events)
     # TODO: Create an HTTP post data codec, use that here
     if @format == "json"
-      LogStash::Json.dump(map_event(event))
-    elsif @format == "message"
-      event.sprintf(@message)
-    else
-      encode(map_event(event))
+      LogStash::Json.dump(events)
+    else 
+      @logger.error("Only supported format is Json")
     end
   end
 
-  def map_event(event)
-    if @mapping
-      @mapping.reduce({}) do |acc,kv|
-        k,v = kv
-        acc[k] = event.sprintf(v)
-        acc
-      end
-    else
-      event.to_hash
-    end
-  end
-
-  def event_headers(event)
-    headers = custom_headers(event) || {}
+  def event_headers()
+    headers = custom_headers() || {}
     headers["Content-Type"] = @content_type
     headers
   end
 
-  def custom_headers(event)
+  def custom_headers()
     return nil unless @headers
 
     @headers.reduce({}) do |acc,kv|
       k,v = kv
-      acc[k] = event.sprintf(v)
+      acc[k] = v
       acc
-    end
-  end
-
-  #TODO Extract this to a codec
-  def encode(hash)
-    return hash.collect do |key, value|
-      CGI.escape(key) + "=" + CGI.escape(value.to_s)
-    end.join("&")
-  end
-
-
-  def validate_format!
-    if @format == "message"
-      if @message.nil?
-        raise "message must be set if message format is used"
-      end
-
-      if @content_type.nil?
-        raise "content_type must be set if message format is used"
-      end
-
-      unless @mapping.nil?
-        @logger.warn "mapping is not supported and will be ignored if message format is used"
-      end
     end
   end
 end
