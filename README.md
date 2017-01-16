@@ -1,7 +1,5 @@
 # Logstash Plugin
 
-[![Travis Build Status](https://travis-ci.org/logstash-plugins/logstash-output-http.svg)](https://travis-ci.org/logstash-plugins/logstash-output-http)
-
 This is a plugin for [Logstash](https://github.com/elastic/logstash).
 
 It is fully free and fully open source. The license is Apache 2.0, meaning you are pretty much free to use it however you want in whatever way.
@@ -10,12 +8,11 @@ It is fully free and fully open source. The license is Apache 2.0, meaning you a
 
 Logstash provides infrastructure to automatically generate documentation for this plugin. We use the asciidoc format to write documentation so any comments in the source code will be first converted into asciidoc and then into html. All plugin documentation are placed under one [central location](http://www.elastic.co/guide/en/logstash/current/).
 
-- For formatting code or config example, you can use the asciidoc `[source,ruby]` directive
-- For more asciidoc formatting tips, see the excellent reference here https://github.com/elastic/docs#asciidoc-guide
+However this is an extension of the http logsatsh plugin. Logsatsh http plugin does not support batching of requests and only makes per event requests. This have been modified here.
 
 ## Need Help?
 
-Need help? Try #logstash on freenode IRC or the https://discuss.elastic.co/c/logstash discussion forum.
+Need help? Mail me at naveen.nitk2009@gmail.com or raise a bug in github repo issues page.
 
 ## Developing
 
@@ -40,6 +37,7 @@ bundle install
 ```
 
 - Run tests
+I am yet to write a test case for this. Basically I am going to extend the tests for http logsatsh plugin.
 
 ```sh
 bundle exec rspec
@@ -48,51 +46,31 @@ bundle exec rspec
 ### 2. Running your unpublished Plugin in Logstash
 
 #### 2.1 Run in a local Logstash clone
+- I am yet to host this plugin in gem repo.
+- For now you will have to build this plugin locally and then install using logsatsh plugin utility.
 
-- Edit Logstash `Gemfile` and add the local plugin path, for example:
-```ruby
-gem "logstash-filter-awesome", :path => "/your/local/logstash-filter-awesome"
+- Build the plugin. This will need you to have complete plugin development environment setup locally. You can do this by visiting logstash plugin development page.
 ```
-- Install plugin
-```sh
-# Logstash 2.3 and higher
-bin/logstash-plugin install --no-verify
+gem build logstash-output-httpbatch.gemspec
+```
 
-# Prior to Logstash 2.3
-bin/plugin install --no-verify
+- Install the plugin.
 
 ```
-- Run Logstash with your plugin
-```sh
-bin/logstash -e 'filter {awesome {}}'
+bin/logsatsh-plugin install logstash-output-http-batch-X.Y.Z.gem
 ```
-At this point any modifications to the plugin code will be applied to this local Logstash setup. After modifying the plugin, simply rerun Logstash.
 
-#### 2.2 Run in an installed Logstash
-
-You can use the same **2.1** method to run your plugin in an installed Logstash by editing its `Gemfile` and pointing the `:path` to your local plugin development directory or you can build the gem and install it using:
-
-- Build your plugin gem
-```sh
-gem build logstash-filter-awesome.gemspec
+- Using the plugin in logstash output
+Add this to output
 ```
-- Install the plugin from the Logstash home
-```sh
-# Logstash 2.3 and higher
-bin/logstash-plugin install --no-verify
-
-# Prior to Logstash 2.3
-bin/plugin install --no-verify
-
+output {
+        httpbatch {
+                http_method => 'post'
+                url => 'http://myoutput.handler.url'
+        }
+}
 ```
-- Start Logstash and proceed to test the plugin
 
-## Contributing
-
-All contributions are welcome: ideas, patches, documentation, bug reports, complaints, and even something you drew up on a napkin.
-
-Programming is not a required skill. Whatever you've seen about open source and maintainers or community members  saying "send patches or die" - you will not see that here.
-
-It is more important to the community that you are able to contribute.
-
-For more information about contributing, see the [CONTRIBUTING](https://github.com/elastic/logstash/blob/master/CONTRIBUTING.md) file.
+### 3. Whats next ?
+- Add tests
+- Make a proper documentation. A lot of options from logsatsh http plugin is not supported here. Will list them down here.
